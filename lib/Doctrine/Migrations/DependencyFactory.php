@@ -168,9 +168,9 @@ class DependencyFactory
         });
     }
 
-    public function getQueryWriter() : FileQueryWriter
+    public function getQueryWriter() : QueryWriter
     {
-        return $this->getDependency(FileQueryWriter::class, function () : FileQueryWriter {
+        return $this->getDependency(QueryWriter::class, function () : QueryWriter {
             return new FileQueryWriter(
                 $this->getOutputWriter(),
                 $this->getFileBuilder()
