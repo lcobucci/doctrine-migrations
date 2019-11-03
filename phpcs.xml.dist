@@ -40,6 +40,10 @@
         <exclude-pattern>lib/Doctrine/Migrations/Configuration/AbstractFileConfiguration.php</exclude-pattern>
     </rule>
 
+    <rule ref="SlevomatCodingStandard.TypeHints.TypeHintDeclaration.MissingReturnTypeHint">
+        <exclude-pattern>lib/Doctrine/Migrations/Version/Version.php</exclude-pattern>
+    </rule>
+
     <rule ref="SlevomatCodingStandard.Classes.SuperfluousAbstractClassNaming">
         <exclude-pattern>lib/Doctrine/Migrations/Configuration/AbstractFileConfiguration.php</exclude-pattern>
         <exclude-pattern>lib/Doctrine/Migrations/Tools/Console/Command/AbstractCommand.php</exclude-pattern>
