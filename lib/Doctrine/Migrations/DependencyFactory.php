@@ -10,7 +10,7 @@ use Doctrine\Migrations\Finder\RecursiveRegexFinder;
 use Doctrine\Migrations\Generator\FileBuilder;
 use Doctrine\Migrations\Generator\Generator;
 use Doctrine\Migrations\Generator\SqlGenerator;
-use Doctrine\Migrations\Metadata\Storage\MetadataStorageConfigration;
+use Doctrine\Migrations\Metadata\Storage\MetadataStorageConfiguration;
 use Doctrine\Migrations\Metadata\Storage\TableMetadataStorageConfiguration;
 use Doctrine\Migrations\Provider\LazySchemaDiffProvider;
 use Doctrine\Migrations\Provider\SchemaDiffProvider;
@@ -134,15 +134,15 @@ class DependencyFactory
         });
     }
 
-    public function setMetadataStorageConfiguration(MetadataStorageConfigration $metadataStorageConfigration) : void
+    public function setMetadataStorageConfiguration(MetadataStorageConfiguration $metadataStorageConfiguration) : void
     {
-        $this->dependencies[MetadataStorageConfigration::class] = $metadataStorageConfigration;
+        $this->dependencies[MetadataStorageConfiguration::class] = $metadataStorageConfiguration;
     }
 
     // phpcs:ignore SlevomatCodingStandard.Classes.UnusedPrivateElements.UnusedMethod
-    private function getMetadataStorageConfiguration() : MetadataStorageConfigration
+    private function getMetadataStorageConfiguration() : MetadataStorageConfiguration
     {
-        return $this->getDependency(MetadataStorageConfigration::class, static function () : MetadataStorageConfigration {
+        return $this->getDependency(MetadataStorageConfiguration::class, static function () : MetadataStorageConfiguration {
             return new TableMetadataStorageConfiguration();
         });
     }
