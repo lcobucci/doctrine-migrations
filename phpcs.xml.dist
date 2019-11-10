@@ -41,6 +41,7 @@
     </rule>
 
     <rule ref="Squiz.Strings.DoubleQuoteUsage.ContainsVar">
+        <exclude-pattern>tests/Doctrine/Migrations/Tests/TestLogger.php</exclude-pattern>
         <exclude-pattern>lib/Doctrine/Migrations/Tools/Console/ConsoleLogger.php</exclude-pattern>
      </rule>
 
