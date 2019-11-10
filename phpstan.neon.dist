@@ -21,6 +21,10 @@ parameters:
         - '~Call to deprecated method .*\(\) of class Doctrine\\Migrations\\Configuration\\Configuration~'
         - '~Call to deprecated method .*\(\) of class Doctrine\\Migrations\\OutputWriter~'
         - '~.* of deprecated class Doctrine\\Migrations\\OutputWriter~'
+        - '~Method Doctrine\\Migrations\\Tools\\Console\\ConsoleLogger::log\(\) has no return typehint specified~'
+        - '~Method Doctrine\\Migrations\\Tools\\Console\\ConsoleLogger::log\(\) has parameter .* with no typehint specified~'
+        - '~^Call to an undefined method Symfony\\Component\\Console\\Output\\OutputInterface\:\:getErrorOutput\(\)\.$~'
+        - '~Binary operation "\." between .* and bool\|float\|int\|object\|string results in an error~'
 
 includes:
     - vendor/phpstan/phpstan-deprecation-rules/rules.neon

@@ -9,6 +9,7 @@ use Doctrine\Migrations\Configuration\Configuration;
 use Doctrine\Migrations\DependencyFactory;
 use Doctrine\Migrations\MigrationRepository;
 use Doctrine\Migrations\Tools\Console\ConnectionLoader;
+use Doctrine\Migrations\Tools\Console\ConsoleLogger;
 use Doctrine\Migrations\Tools\Console\Helper\ConfigurationHelper;
 use Doctrine\Migrations\Tools\Console\Helper\ConfigurationHelperInterface;
 use Symfony\Component\Console\Command\Command;
@@ -121,6 +122,8 @@ abstract class AbstractCommand extends Command
             }
 
             $this->migrationConfiguration = $configHelper->getMigrationConfig($input);
+
+            $this->migrationConfiguration->getDependencyFactory()->setLogger(new ConsoleLogger($output));
 
             $this->migrationConfiguration->getOutputWriter()->setCallback(
                 static function (string $message) use ($output) : void {

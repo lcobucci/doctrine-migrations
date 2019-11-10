@@ -23,6 +23,8 @@ use Doctrine\Migrations\Tracking\TableUpdater;
 use Doctrine\Migrations\Version\AliasResolver;
 use Doctrine\Migrations\Version\Executor;
 use Doctrine\Migrations\Version\Factory;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Stopwatch\Stopwatch as SymfonyStopwatch;
 
 /**
@@ -38,9 +40,13 @@ class DependencyFactory
     /** @var object[] */
     private $dependencies = [];
 
-    public function __construct(Configuration $configuration)
+    /** @var LoggerInterface */
+    private $logger;
+
+    public function __construct(Configuration $configuration, ?LoggerInterface $logger = null)
     {
         $this->configuration = $configuration;
+        $this->logger        = $logger ?: new NullLogger();
     }
 
     public function getEventDispatcher() : EventDispatcher
@@ -167,6 +173,16 @@ class DependencyFactory
                 $this->getConnection()->getDatabasePlatform()
             );
         });
+    }
+
+    public function getLogger() : LoggerInterface
+    {
+        return $this->logger;
+    }
+
+    public function setLogger(LoggerInterface $logger) : void // temporary
+    {
+        $this->logger = $logger;
     }
 
     public function getVersionExecutor() : Executor
