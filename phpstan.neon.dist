@@ -17,6 +17,9 @@ parameters:
         - '~^Parameter #1 \$files of method Doctrine\\Migrations\\Finder\\Finder::loadMigrationClasses\(\) expects array<string>, array<int, string\|false> given\.\z~'
         - '~^Class Doctrine\\Migrations\\Tests\\DoesNotExistAtAll not found\.\z~'
 
+        # Ignore temporary deprecations
+        - '~Call to deprecated method .*\(\) of class Doctrine\\Migrations\\Configuration\\Configuration~'
+
 includes:
     - vendor/phpstan/phpstan-deprecation-rules/rules.neon
     - vendor/phpstan/phpstan-phpunit/extension.neon

@@ -112,26 +112,31 @@ class Configuration
         return $this->connection;
     }
 
+    /** @deprecated */
     public function setMigrationsTableName(string $tableName) : void
     {
         $this->metadataStorageConfiguration->setTableName($tableName);
     }
 
+    /** @deprecated */
     public function getMigrationsTableName() : string
     {
         return $this->metadataStorageConfiguration->getTableName();
     }
 
+    /** @deprecated */
     public function setMigrationsColumnName(string $columnName) : void
     {
         $this->metadataStorageConfiguration->setVersionColumnName($columnName);
     }
 
+    /** @deprecated */
     public function getMigrationsColumnName() : string
     {
         return $this->metadataStorageConfiguration->getVersionColumnName();
     }
 
+    /** @deprecated */
     public function getQuotedMigrationsColumnName() : string
     {
         return $this->getDependencyFactory()
@@ -140,11 +145,13 @@ class Configuration
             ->getQuotedName($this->connection->getDatabasePlatform());
     }
 
+    /** @deprecated */
     public function setMigrationsColumnLength(int $columnLength) : void
     {
         $this->metadataStorageConfiguration->setVersionColumnLength($columnLength);
     }
 
+    /** @deprecated */
     public function getMigrationsColumnLength() : int
     {
         return $this->metadataStorageConfiguration->getVersionColumnLength();
@@ -156,16 +163,19 @@ class Configuration
         $this->metadataStorageConfiguration = $metadataStorageConfiguration;
     }
 
+    /** @deprecated */
     public function setMigrationsExecutedAtColumnName(string $migrationsExecutedAtColumnName) : void
     {
         $this->metadataStorageConfiguration->setExecutedAtColumnName($migrationsExecutedAtColumnName);
     }
 
+    /** @deprecated */
     public function getMigrationsExecutedAtColumnName() : string
     {
         return $this->metadataStorageConfiguration->getExecutedAtColumnName();
     }
 
+    /** @deprecated */
     public function getQuotedMigrationsExecutedAtColumnName() : string
     {
         return $this->getDependencyFactory()
