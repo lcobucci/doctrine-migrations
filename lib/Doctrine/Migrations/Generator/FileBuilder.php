@@ -15,7 +15,7 @@ use function sprintf;
  *
  * @internal
  */
-class FileBuilder implements FileBuilderInterface
+final class FileBuilder implements FileBuilderInterface
 {
     /** @var AbstractPlatform */
     private $platform;
