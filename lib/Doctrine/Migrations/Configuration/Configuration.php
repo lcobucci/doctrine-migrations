@@ -17,11 +17,13 @@ use Doctrine\Migrations\Exception\MigrationException;
 use Doctrine\Migrations\Exception\MigrationsDirectoryRequired;
 use Doctrine\Migrations\Finder\MigrationDeepFinder;
 use Doctrine\Migrations\Finder\MigrationFinder;
+use Doctrine\Migrations\Metadata\Storage\MetadataStorageConfiguration;
+use Doctrine\Migrations\Metadata\Storage\TableMetadataStorageConfiguration;
 use Doctrine\Migrations\OutputWriter;
 use Doctrine\Migrations\QueryWriter;
 use Doctrine\Migrations\Version\Version;
+use function assert;
 use function str_replace;
-use function strlen;
 
 /**
  * The Configuration class is responsible for defining migration configuration information.
@@ -36,18 +38,6 @@ class Configuration
 
     /** @var string|null */
     private $name;
-
-    /** @var string */
-    private $migrationsTableName = 'doctrine_migration_versions';
-
-    /** @var string */
-    private $migrationsColumnName = 'version';
-
-    /** @var int */
-    private $migrationsColumnLength;
-
-    /** @var string */
-    private $migrationsExecutedAtColumnName = 'executed_at';
 
     /** @var string|null */
     private $migrationsDirectory;
@@ -88,6 +78,9 @@ class Configuration
     /** @var bool */
     private $checkDbPlatform = true;
 
+    /** @var TableMetadataStorageConfiguration */
+    private $metadataStorageConfiguration;
+
     public function __construct(
         Connection $connection,
         ?OutputWriter $outputWriter = null,
@@ -95,12 +88,13 @@ class Configuration
         ?QueryWriter $queryWriter = null,
         ?DependencyFactory $dependencyFactory = null
     ) {
-        $this->connection             = $connection;
-        $this->outputWriter           = $outputWriter;
-        $this->migrationFinder        = $migrationFinder;
-        $this->queryWriter            = $queryWriter;
-        $this->dependencyFactory      = $dependencyFactory;
-        $this->migrationsColumnLength = strlen($this->createDateTime()->format(self::VERSION_FORMAT));
+        $this->connection        = $connection;
+        $this->outputWriter      = $outputWriter;
+        $this->migrationFinder   = $migrationFinder;
+        $this->queryWriter       = $queryWriter;
+        $this->dependencyFactory = $dependencyFactory;
+
+        $this->metadataStorageConfiguration = new TableMetadataStorageConfiguration();
     }
 
     public function setName(string $name) : void
@@ -120,22 +114,22 @@ class Configuration
 
     public function setMigrationsTableName(string $tableName) : void
     {
-        $this->migrationsTableName = $tableName;
+        $this->metadataStorageConfiguration->setTableName($tableName);
     }
 
     public function getMigrationsTableName() : string
     {
-        return $this->migrationsTableName;
+        return $this->metadataStorageConfiguration->getTableName();
     }
 
     public function setMigrationsColumnName(string $columnName) : void
     {
-        $this->migrationsColumnName = $columnName;
+        $this->metadataStorageConfiguration->setVersionColumnName($columnName);
     }
 
     public function getMigrationsColumnName() : string
     {
-        return $this->migrationsColumnName;
+        return $this->metadataStorageConfiguration->getVersionColumnName();
     }
 
     public function getQuotedMigrationsColumnName() : string
@@ -148,22 +142,28 @@ class Configuration
 
     public function setMigrationsColumnLength(int $columnLength) : void
     {
-        $this->migrationsColumnLength = $columnLength;
+        $this->metadataStorageConfiguration->setVersionColumnLength($columnLength);
     }
 
     public function getMigrationsColumnLength() : int
     {
-        return $this->migrationsColumnLength;
+        return $this->metadataStorageConfiguration->getVersionColumnLength();
+    }
+
+    public function setMetadataStorageConfiguration(MetadataStorageConfiguration $metadataStorageConfiguration) : void
+    {
+        assert($metadataStorageConfiguration instanceof TableMetadataStorageConfiguration); // temporarily
+        $this->metadataStorageConfiguration = $metadataStorageConfiguration;
     }
 
     public function setMigrationsExecutedAtColumnName(string $migrationsExecutedAtColumnName) : void
     {
-        $this->migrationsExecutedAtColumnName = $migrationsExecutedAtColumnName;
+        $this->metadataStorageConfiguration->setExecutedAtColumnName($migrationsExecutedAtColumnName);
     }
 
     public function getMigrationsExecutedAtColumnName() : string
     {
-        return $this->migrationsExecutedAtColumnName;
+        return $this->metadataStorageConfiguration->getExecutedAtColumnName();
     }
 
     public function getQuotedMigrationsExecutedAtColumnName() : string
@@ -172,6 +172,11 @@ class Configuration
             ->getTrackingTableDefinition()
             ->getExecutedAtColumn()
             ->getQuotedName($this->connection->getDatabasePlatform());
+    }
+
+    public function getMetadataStorageConfiguration() : ?MetadataStorageConfiguration
+    {
+        return $this->metadataStorageConfiguration;
     }
 
     public function setMigrationsDirectory(string $migrationsDirectory) : void

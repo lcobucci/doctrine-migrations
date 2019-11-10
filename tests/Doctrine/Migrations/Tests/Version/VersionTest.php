@@ -407,6 +407,7 @@ class VersionTest extends MigrationTestCase
             ->setMethods([
                 'getOutputWriter',
                 'getConnection',
+                'getMigrationsTableName',
                 'getQuotedMigrationsColumnName',
                 'getQuotedMigrationsExecutedAtColumnName',
             ])
@@ -417,6 +418,9 @@ class VersionTest extends MigrationTestCase
 
         $config->method('getConnection')
             ->willReturn($connection);
+
+        $config->method('getMigrationsTableName')
+            ->willReturn('doctrine_migration_versions');
 
         $config->method('getQuotedMigrationsColumnName')
             ->willReturn('version');
