@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Doctrine\Migrations\Generator;
 
+use DateTimeImmutable;
 use DateTimeInterface;
 use Doctrine\DBAL\Platforms\AbstractPlatform;
 use Doctrine\Migrations\Version\Direction;
@@ -14,7 +15,7 @@ use function sprintf;
  *
  * @internal
  */
-final class FileBuilder
+class FileBuilder implements FileBuilderInterface
 {
     /** @var AbstractPlatform */
     private $platform;
@@ -44,8 +45,9 @@ final class FileBuilder
     public function buildMigrationFile(
         array $queriesByVersion,
         string $direction,
-        DateTimeInterface $now
+        ?DateTimeInterface $now = null
     ) : string {
+        $now    = $now ?: new DateTimeImmutable();
         $string = sprintf("-- Doctrine Migration File Generated on %s\n", $now->format('Y-m-d H:i:s'));
 
         foreach ($queriesByVersion as $version => $queries) {

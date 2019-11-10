@@ -63,5 +63,6 @@
         <exclude-pattern>lib/Doctrine/Migrations/Version/ExecutorInterface.php</exclude-pattern>
         <exclude-pattern>lib/Doctrine/Migrations/ParameterFormatterInterface.php</exclude-pattern>
         <exclude-pattern>lib/Doctrine/Migrations/Version/VersionInterface.php</exclude-pattern>
+        <exclude-pattern>lib/Doctrine/Migrations/Generator/FileBuilderInterface.php</exclude-pattern>
     </rule>
 </ruleset>
