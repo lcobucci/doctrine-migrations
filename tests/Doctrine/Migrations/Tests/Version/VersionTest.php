@@ -43,7 +43,6 @@ use ReflectionClass;
 use stdClass;
 use Symfony\Component\Stopwatch\Stopwatch as SymfonyStopwatch;
 use Throwable;
-use const DIRECTORY_SEPARATOR;
 use function current;
 use function date;
 use function file_get_contents;
@@ -53,6 +52,7 @@ use function strtotime;
 use function sys_get_temp_dir;
 use function trim;
 use function unlink;
+use const DIRECTORY_SEPARATOR;
 
 class VersionTest extends MigrationTestCase
 {
@@ -75,57 +75,6 @@ class VersionTest extends MigrationTestCase
         );
 
         self::assertSame($versionName, $version->getVersion());
-    }
-
-    public function testShowSqlStatementsParameters() : void
-    {
-        $outputWriter = $this->getOutputWriter();
-
-        $configuration = $this->getSqliteConfiguration();
-        $configuration->setOutputWriter($outputWriter);
-
-        $version   = $this->createTestVersion($configuration, '0004', VersionOutputSqlWithParam::class);
-        $migration = $version->getMigration();
-
-        self::assertInstanceOf(VersionOutputSqlWithParam::class, $migration);
-
-        $migration->setParam([
-            0 => 456,
-            1 => 'tralala',
-            2 => 456,
-        ]);
-
-        $version->execute(Direction::UP);
-
-        self::assertContains('([456], [tralala], [456])', $this->getOutputStreamContent($this->output));
-    }
-
-    public function testShowSqlStatementsParametersWithTypes() : void
-    {
-        $outputWriter = $this->getOutputWriter();
-
-        $configuration = $this->getSqliteConfiguration();
-        $configuration->setOutputWriter($outputWriter);
-
-        $version   = $this->createTestVersion($configuration, '0004', VersionOutputSqlWithParamAndType::class);
-        $migration = $version->getMigration();
-
-        self::assertInstanceOf(VersionOutputSqlWithParamAndType::class, $migration);
-
-        $migration->setParam([
-            0 => [
-                456,
-                3,
-                456,
-            ],
-        ]);
-
-        $migration->setType([Connection::PARAM_INT_ARRAY]);
-
-        $version->execute(Direction::UP, (new MigratorConfiguration())
-            ->setDryRun(true));
-
-        self::assertContains('([456, 3, 456])', $this->getOutputStreamContent($this->output));
     }
 
     public function testCreateVersionWithCustomName() : void
@@ -201,21 +150,14 @@ class VersionTest extends MigrationTestCase
     {
         $version = '1';
 
-        $connection   = $this->getSqliteConnection();
-        $outputWriter = $this->createMock(OutputWriter::class);
-        $queryWriter  = $this->createMock(QueryWriter::class);
-
-        $outputWriter->expects(self::atLeastOnce())
-            ->method('write');
+        $connection  = $this->getSqliteConnection();
+        $queryWriter = $this->createMock(QueryWriter::class);
 
         /** @var Configuration|PHPUnit_Framework_MockObject_MockObject $config */
         $config = $this->getMockBuilder(Configuration::class)
             ->disableOriginalConstructor()
             ->setMethods(['getConnection', 'getOutputWriter', 'getQueryWriter'])
             ->getMock();
-
-        $config->method('getOutputWriter')
-            ->willReturn($outputWriter);
 
         $config->method('getConnection')
             ->willReturn($connection);
@@ -251,50 +193,6 @@ class VersionTest extends MigrationTestCase
             [__DIR__, 'down', ['1' => ['SHOW DATABASES;']]], // up
             [__DIR__ . '/tmpfile.sql', 'up', ['1' => ['SHOW DATABASES']]], // tests something actually got written
         ];
-    }
-
-    public function testWarningWhenNoSqlStatementIsOutputed() : void
-    {
-        $outputWriter = $this->getOutputWriter();
-
-        $config = $this->getSqliteConfiguration();
-        $config->setOutputWriter($outputWriter);
-
-        $version = $this->createTestVersion(
-            $config,
-            '003',
-            VersionDummy::class
-        );
-
-        $version->execute('up');
-
-        self::assertContains(
-            'Migration 003 was executed but did not result in any SQL statements.',
-            $this->getOutputStreamContent($this->output)
-        );
-    }
-
-    public function testCatchExceptionDuringMigration() : void
-    {
-        $outputWriter = $this->getOutputWriter();
-
-        $config = $this->getSqliteConfiguration();
-        $config->setOutputWriter($outputWriter);
-
-        $version = $this->createTestVersion(
-            $config,
-            '004',
-            ExceptionVersionDummy::class
-        );
-
-        try {
-            $version->execute('up');
-        } catch (Throwable $e) {
-            self::assertContains(
-                'Migration 004 failed during Execution. Error Super Exception',
-                $this->getOutputStreamContent($this->output)
-            );
-        }
     }
 
     public function testReturnTheSql() : void
@@ -413,9 +311,6 @@ class VersionTest extends MigrationTestCase
             ])
             ->getMock();
 
-        $config->method('getOutputWriter')
-            ->willReturn($this->getOutputWriter());
-
         $config->method('getConnection')
             ->willReturn($connection);
 
@@ -442,8 +337,6 @@ class VersionTest extends MigrationTestCase
 
         $sqlFilesDir = vfsStream::setup('sql_files_dir');
         $migration->writeSqlFile(vfsStream::url('sql_files_dir'), $direction);
-
-        self::assertRegExp('/^\s*-- Version 1/m', $this->getOutputStreamContent($this->output));
 
         /** @var vfsStreamFile $sqlMigrationFile */
         $sqlMigrationFile = current($sqlFilesDir->getChildren());

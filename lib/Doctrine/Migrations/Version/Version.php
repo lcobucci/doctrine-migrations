@@ -12,8 +12,8 @@ use Doctrine\Migrations\AbstractMigration;
 use Doctrine\Migrations\Configuration\Configuration;
 use Doctrine\Migrations\Exception\MigrationNotConvertibleToSql;
 use Doctrine\Migrations\MigratorConfiguration;
-use Doctrine\Migrations\OutputWriter;
 use Doctrine\Migrations\Tracking\TableDefinition;
+use Psr\Log\LoggerInterface;
 use function assert;
 use function count;
 use function date_default_timezone_get;
@@ -31,8 +31,8 @@ class Version
     /** @var Configuration */
     private $configuration;
 
-    /** @var OutputWriter */
-    private $outputWriter;
+    /** @var LoggerInterface */
+    private $logger;
 
     /** @var string */
     private $version;
@@ -59,7 +59,7 @@ class Version
         ExecutorInterface $versionExecutor
     ) {
         $this->configuration   = $configuration;
-        $this->outputWriter    = $configuration->getOutputWriter();
+        $this->logger          = $configuration->getDependencyFactory()->getLogger();
         $this->class           = $class;
         $this->connection      = $configuration->getConnection();
         $this->migration       = new $class($this);
@@ -160,7 +160,7 @@ class Version
             throw MigrationNotConvertibleToSql::new($this->class);
         }
 
-        $this->outputWriter->write("\n-- Version " . $this->version . "\n");
+        $this->logger->info('-- Version ' . $this->version);
 
         $sqlQueries = [$this->version => $versionExecutionResult->getSql()];
 
