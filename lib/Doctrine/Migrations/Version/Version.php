@@ -237,4 +237,12 @@ class Version
             $this->connection->getDatabasePlatform()
         );
     }
+
+    /**
+     * @param mixed $object
+     */
+    public function equals($object) : bool
+    {
+        return $object instanceof self && $object->version === $this->version;
+    }
 }
