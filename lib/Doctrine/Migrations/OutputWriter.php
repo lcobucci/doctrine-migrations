@@ -6,6 +6,8 @@ namespace Doctrine\Migrations;
 
 /**
  * The OutputWriter class is responsible for writing output to the command line when executing migrations.
+ *
+ * @deprecated
  */
 class OutputWriter
 {
@@ -26,16 +28,19 @@ class OutputWriter
         $this->callback = $callback;
     }
 
+    /** @deprecated */
     public function setCallback(callable $callback) : void
     {
         $this->callback = $callback;
     }
 
+    /** @deprecated */
     public function write(string $message) : void
     {
         ($this->callback)($message);
     }
 
+    /** @deprecated */
     public function getLastMessage() : string
     {
         return $this->lastMessage;

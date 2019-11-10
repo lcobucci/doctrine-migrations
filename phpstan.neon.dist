@@ -19,6 +19,8 @@ parameters:
 
         # Ignore temporary deprecations
         - '~Call to deprecated method .*\(\) of class Doctrine\\Migrations\\Configuration\\Configuration~'
+        - '~Call to deprecated method .*\(\) of class Doctrine\\Migrations\\OutputWriter~'
+        - '~.* of deprecated class Doctrine\\Migrations\\OutputWriter~'
 
 includes:
     - vendor/phpstan/phpstan-deprecation-rules/rules.neon
