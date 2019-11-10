@@ -4,55 +4,41 @@ declare(strict_types=1);
 
 namespace Doctrine\Migrations\Tools\Console\Helper;
 
-use Doctrine\DBAL\Connection;
-use Doctrine\Migrations\Configuration\ArrayConfiguration;
 use Doctrine\Migrations\Configuration\Configuration;
-use Doctrine\Migrations\Configuration\JsonConfiguration;
-use Doctrine\Migrations\Configuration\XmlConfiguration;
-use Doctrine\Migrations\Configuration\YamlConfiguration;
+use Doctrine\Migrations\Configuration\ConfigurationLoader;
+use Doctrine\Migrations\Configuration\Exception\UnknownLoader;
 use Doctrine\Migrations\Tools\Console\Exception\FileTypeNotSupported;
 use Symfony\Component\Console\Helper\Helper;
 use Symfony\Component\Console\Input\InputInterface;
+use const PATHINFO_EXTENSION;
 use function file_exists;
+use function is_string;
 use function pathinfo;
 
 /**
  * The ConfigurationHelper class is responsible for getting the Configuration instance from one of the supported methods
  * for defining the configuration for your migrations.
  */
-class ConfigurationHelper extends Helper implements ConfigurationHelperInterface
+final class ConfigurationHelper extends Helper implements ConfigurationHelperInterface
 {
-    /** @var Connection */
-    private $connection;
+    /** @var ConfigurationLoader */
+    private $loader;
 
-    /** @var Configuration|null */
-    private $configuration;
-
-    public function __construct(
-        Connection $connection,
-        ?Configuration $configuration = null
-    ) {
-        $this->connection    = $connection;
-        $this->configuration = $configuration;
+    public function __construct(?ConfigurationLoader $loader = null)
+    {
+        $this->loader = $loader ?: new ConfigurationLoader();
     }
 
-    public function getMigrationConfig(InputInterface $input) : Configuration
+    public function getConfiguration(InputInterface $input) : Configuration
     {
         /**
          * If a configuration option is passed to the command line, use that configuration
          * instead of any other one.
          */
-        $configuration = $input->getOption('configuration');
+        $configurationFile = $input->getOption('configuration');
 
-        if ($configuration !== null) {
-            return $this->loadConfig($configuration);
-        }
-
-        /**
-         * If a configuration has already been set using DI or a Setter use it.
-         */
-        if ($this->configuration !== null) {
-            return $this->configuration;
+        if ($configurationFile !== null && is_string($configurationFile)) {
+            return $this->loadConfig($configurationFile);
         }
 
         /**
@@ -72,7 +58,7 @@ class ConfigurationHelper extends Helper implements ConfigurationHelperInterface
             }
         }
 
-        return new Configuration($this->connection);
+        return $this->loader->getLoader('array')->load([]);
     }
 
     private function configExists(string $config) : bool
@@ -83,28 +69,15 @@ class ConfigurationHelper extends Helper implements ConfigurationHelperInterface
     /**
      * @throws FileTypeNotSupported
      */
-    private function loadConfig(string $config) : Configuration
+    private function loadConfig(string $configFile) : Configuration
     {
-        $map = [
-            'xml'   => XmlConfiguration::class,
-            'yaml'  => YamlConfiguration::class,
-            'yml'   => YamlConfiguration::class,
-            'php'   => ArrayConfiguration::class,
-            'json'  => JsonConfiguration::class,
-        ];
+        $extension = pathinfo($configFile, PATHINFO_EXTENSION);
 
-        $info = pathinfo($config);
-
-        // check we can support this file type
-        if (! isset($map[$info['extension']])) {
+        try {
+            return $this->loader->getLoader($extension)->load($configFile);
+        } catch (UnknownLoader $e) {
             throw FileTypeNotSupported::new();
         }
-
-        $class         = $map[$info['extension']];
-        $configuration = new $class($this->connection);
-        $configuration->load($config);
-
-        return $configuration;
     }
 
     /**

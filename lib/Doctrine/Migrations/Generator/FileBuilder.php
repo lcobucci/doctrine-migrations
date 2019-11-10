@@ -6,8 +6,6 @@ namespace Doctrine\Migrations\Generator;
 
 use DateTimeImmutable;
 use DateTimeInterface;
-use Doctrine\DBAL\Platforms\AbstractPlatform;
-use Doctrine\Migrations\Version\Direction;
 use function sprintf;
 
 /**
@@ -17,30 +15,6 @@ use function sprintf;
  */
 final class FileBuilder implements FileBuilderInterface
 {
-    /** @var AbstractPlatform */
-    private $platform;
-
-    /** @var string */
-    private $tableName;
-
-    /** @var string */
-    private $columnName;
-
-    /** @var string */
-    private $executedAtColumnName;
-
-    public function __construct(
-        AbstractPlatform $platform,
-        string $tableName,
-        string $columnName,
-        string $executedAtColumnName
-    ) {
-        $this->platform             = $platform;
-        $this->tableName            = $tableName;
-        $this->columnName           = $columnName;
-        $this->executedAtColumnName = $executedAtColumnName;
-    }
-
     /** @param string[][] $queriesByVersion */
     public function buildMigrationFile(
         array $queriesByVersion,
@@ -58,31 +32,8 @@ final class FileBuilder implements FileBuilderInterface
             foreach ($queries as $query) {
                 $string .= $query . ";\n";
             }
-
-            $string .= $this->getVersionUpdateQuery($version, $direction);
         }
 
         return $string;
-    }
-
-    private function getVersionUpdateQuery(string $version, string $direction) : string
-    {
-        if ($direction === Direction::DOWN) {
-            return sprintf(
-                "DELETE FROM %s WHERE %s = '%s';\n",
-                $this->tableName,
-                $this->columnName,
-                $version
-            );
-        }
-
-        return sprintf(
-            "INSERT INTO %s (%s, %s) VALUES ('%s', %s);\n",
-            $this->tableName,
-            $this->columnName,
-            $this->executedAtColumnName,
-            $version,
-            $this->platform->getCurrentTimestampSQL()
-        );
     }
 }

@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 namespace Doctrine\Migrations\Tools\Console\Command;
 
-use Doctrine\DBAL\Connection;
-use Doctrine\Migrations\Configuration\Configuration;
 use Doctrine\Migrations\DependencyFactory;
-use Doctrine\Migrations\MigrationRepository;
 use Doctrine\Migrations\Tools\Console\ConnectionLoader;
 use Doctrine\Migrations\Tools\Console\ConsoleLogger;
+use Doctrine\Migrations\Tools\Console\Exception\DependenciesNotSatisfied;
 use Doctrine\Migrations\Tools\Console\Helper\ConfigurationHelper;
 use Doctrine\Migrations\Tools\Console\Helper\ConfigurationHelperInterface;
+use Doctrine\ORM\Tools\Console\Helper\EntityManagerHelper;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\HelperSet;
 use Symfony\Component\Console\Input\InputInterface;
@@ -19,6 +18,7 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Question\ConfirmationQuestion;
 use function escapeshellarg;
+use function is_string;
 use function proc_open;
 use function str_repeat;
 use function strlen;
@@ -28,53 +28,21 @@ use function strlen;
  */
 abstract class AbstractCommand extends Command
 {
-    /** @var Configuration */
-    protected $configuration;
-
-    /** @var Connection */
-    protected $connection;
-
-    /** @var DependencyFactory */
-    protected $dependencyFactory;
-
-    /** @var MigrationRepository */
-    protected $migrationRepository;
-
-    /** @var Configuration|null */
-    protected $migrationConfiguration;
-
-    public function setMigrationConfiguration(Configuration $configuration) : void
-    {
-        $this->configuration = $configuration;
-
-        $this->initializeDependencies();
-    }
-
-    public function setConnection(Connection $connection) : void
-    {
-        $this->connection = $connection;
-    }
-
-    public function setDependencyFactory(DependencyFactory $dependencyFactory) : void
-    {
-        $this->dependencyFactory = $dependencyFactory;
-    }
-
-    public function setMigrationRepository(MigrationRepository $migrationRepository) : void
-    {
-        $this->migrationRepository = $migrationRepository;
-    }
+    /** @var DependencyFactory|null */
+    private $dependencyFactory;
 
     public function initialize(
         InputInterface $input,
         OutputInterface $output
     ) : void {
-        $this->configuration = $this->getMigrationConfiguration($input, $output);
+        $this->initializeDependencies($input, $output);
+        $this->getDependencyFactory()->getConfiguration()->validate();
+    }
 
-        $this->initializeDependencies();
-
-        $this->configuration->validate();
-        $this->configuration->createMigrationTable();
+    public function __construct(?string $name = null, ?DependencyFactory $dependencyFactory = null)
+    {
+        parent::__construct($name);
+        $this->dependencyFactory = $dependencyFactory;
     }
 
     protected function configure() : void
@@ -97,7 +65,7 @@ abstract class AbstractCommand extends Command
     protected function outputHeader(
         OutputInterface $output
     ) : void {
-        $name = $this->configuration->getName();
+        $name = $this->getDependencyFactory()->getConfiguration()->getName();
         $name = $name ?? 'Doctrine Database Migrations';
         $name = str_repeat(' ', 20) . $name . str_repeat(' ', 20);
         $output->writeln('<question>' . str_repeat(' ', strlen($name)) . '</question>');
@@ -106,37 +74,45 @@ abstract class AbstractCommand extends Command
         $output->writeln('');
     }
 
-    protected function getMigrationConfiguration(
+    protected function initializeDependencies(
         InputInterface $input,
         OutputInterface $output
-    ) : Configuration {
-        if ($this->migrationConfiguration === null) {
-            if ($this->hasConfigurationHelper()) {
-                /** @var ConfigurationHelper $configHelper */
-                $configHelper = $this->getHelperSet()->get('configuration');
-            } else {
-                $configHelper = new ConfigurationHelper(
-                    $this->getConnection($input),
-                    $this->configuration
-                );
-            }
+    ) : void {
+        if ($this->dependencyFactory !== null) {
+            return;
+        }
+        $helperSet = $this->getHelperSet() ?: new HelperSet();
 
-            $this->migrationConfiguration = $configHelper->getMigrationConfig($input);
-
-            $this->migrationConfiguration->getDependencyFactory()->setLogger(new ConsoleLogger($output));
-
-            $this->migrationConfiguration->getOutputWriter()->setCallback(
-                static function (string $message) use ($output) : void {
-                    $output->writeln($message);
-                }
-            );
+        if ($helperSet->has('configuration') && $helperSet->get('configuration') instanceof ConfigurationHelperInterface) {
+            /** @var ConfigurationHelper $configHelper */
+            $configHelper = $helperSet->get('configuration');
+        } else {
+            $configHelper = new ConfigurationHelper();
         }
 
-        if ($this->migrationConfiguration === null && $this->configuration !== null) {
-            $this->migrationConfiguration = $this->configuration;
+        $configuration = $configHelper->getConfiguration($input);
+
+        $dbConfig = is_string($input->getOption('db-configuration')) ? $input->getOption('db-configuration'): null;
+
+        $connection = (new ConnectionLoader())
+            ->getConnection($dbConfig, $helperSet);
+
+        $em = null;
+        if ($helperSet->has('em') && $helperSet->get('em') instanceof EntityManagerHelper) {
+            $em = $helperSet->get('em')->getEntityManager();
         }
 
-        return $this->migrationConfiguration;
+        $logger                  = new ConsoleLogger($output);
+        $this->dependencyFactory = new DependencyFactory($configuration, $connection, $em, $logger);
+    }
+
+    protected function getDependencyFactory() : DependencyFactory
+    {
+        if ($this->dependencyFactory === null) {
+            throw DependenciesNotSatisfied::new();
+        }
+
+        return $this->dependencyFactory;
     }
 
     protected function askConfirmation(
@@ -162,38 +138,5 @@ abstract class AbstractCommand extends Command
     protected function procOpen(string $editorCommand, string $path) : void
     {
         proc_open($editorCommand . ' ' . escapeshellarg($path), [], $pipes);
-    }
-
-    private function initializeDependencies() : void
-    {
-        $this->connection          = $this->configuration->getConnection();
-        $this->dependencyFactory   = $this->configuration->getDependencyFactory();
-        $this->migrationRepository = $this->dependencyFactory->getMigrationRepository();
-    }
-
-    private function hasConfigurationHelper() : bool
-    {
-        /** @var HelperSet|null $helperSet */
-        $helperSet = $this->getHelperSet();
-
-        if ($helperSet === null) {
-            return false;
-        }
-
-        if (! $helperSet->has('configuration')) {
-            return false;
-        }
-
-        return $helperSet->get('configuration') instanceof ConfigurationHelperInterface;
-    }
-
-    private function getConnection(InputInterface $input) : Connection
-    {
-        if ($this->connection === null) {
-            $this->connection = (new ConnectionLoader($this->configuration))
-                ->getConnection($input, $this->getHelperSet());
-        }
-
-        return $this->connection;
     }
 }

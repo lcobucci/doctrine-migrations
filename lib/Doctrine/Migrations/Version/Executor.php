@@ -4,22 +4,23 @@ declare(strict_types=1);
 
 namespace Doctrine\Migrations\Version;
 
+use DateTimeImmutable;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
-use Doctrine\Migrations\Configuration\Configuration;
+use Doctrine\Migrations\EventDispatcher;
 use Doctrine\Migrations\Events;
 use Doctrine\Migrations\Exception\SkipMigration;
+use Doctrine\Migrations\Metadata\MigrationPlan;
+use Doctrine\Migrations\Metadata\Storage\MetadataStorage;
 use Doctrine\Migrations\MigratorConfiguration;
-use Doctrine\Migrations\OutputWriter;
 use Doctrine\Migrations\ParameterFormatterInterface;
-use Doctrine\Migrations\Provider\SchemaDiffProviderInterface;
+use Doctrine\Migrations\Provider\SchemaDiffProvider;
 use Doctrine\Migrations\Stopwatch;
 use Doctrine\Migrations\Tools\BytesFormatter;
+use Psr\Log\LoggerInterface;
 use Throwable;
 use function count;
-use function rtrim;
-use function sprintf;
 use function ucfirst;
 
 /**
@@ -29,17 +30,11 @@ use function ucfirst;
  */
 final class Executor implements ExecutorInterface
 {
-    /** @var Configuration */
-    private $configuration;
-
     /** @var Connection */
     private $connection;
 
-    /** @var SchemaDiffProviderInterface */
+    /** @var SchemaDiffProvider */
     private $schemaProvider;
-
-    /** @var OutputWriter */
-    private $outputWriter;
 
     /** @var ParameterFormatterInterface */
     private $parameterFormatter;
@@ -47,7 +42,7 @@ final class Executor implements ExecutorInterface
     /** @var Stopwatch */
     private $stopwatch;
 
-    /** @var string[] */
+    /** @var array<int, string> */
     private $sql = [];
 
     /** @var mixed[] */
@@ -56,20 +51,31 @@ final class Executor implements ExecutorInterface
     /** @var mixed[] */
     private $types = [];
 
+    /** @var MetadataStorage */
+    private $metadataStorage;
+
+    /** @var LoggerInterface */
+    private $logger;
+
+    /** @var EventDispatcher */
+    private $dispatcher;
+
     public function __construct(
-        Configuration $configuration,
+        MetadataStorage $metadataStorage,
+        EventDispatcher $dispatcher,
         Connection $connection,
-        SchemaDiffProviderInterface $schemaProvider,
-        OutputWriter $outputWriter,
+        SchemaDiffProvider $schemaProvider,
+        LoggerInterface $logger,
         ParameterFormatterInterface $parameterFormatter,
         Stopwatch $stopwatch
     ) {
-        $this->configuration      = $configuration;
         $this->connection         = $connection;
         $this->schemaProvider     = $schemaProvider;
-        $this->outputWriter       = $outputWriter;
         $this->parameterFormatter = $parameterFormatter;
         $this->stopwatch          = $stopwatch;
+        $this->metadataStorage    = $metadataStorage;
+        $this->logger             = $logger;
+        $this->dispatcher         = $dispatcher;
     }
 
     /**
@@ -112,69 +118,51 @@ final class Executor implements ExecutorInterface
     }
 
     public function execute(
-        Version $version,
-        AbstractMigration $migration,
-        string $direction,
-        ?MigratorConfiguration $migratorConfiguration = null
+        MigrationPlan $plan,
+        MigratorConfiguration $configuration
     ) : ExecutionResult {
-        $migratorConfiguration = $migratorConfiguration ?? new MigratorConfiguration();
+        $result = new ExecutionResult($plan->getVersion(), $plan->getDirection(), new DateTimeImmutable());
 
-        $versionExecutionResult = new ExecutionResult();
-
-        $this->startMigration($version, $migration, $direction, $migratorConfiguration);
+        $this->startMigration($plan, $configuration);
 
         try {
             $this->executeMigration(
-                $version,
-                $migration,
-                $versionExecutionResult,
-                $direction,
-                $migratorConfiguration
+                $plan,
+                $result,
+                $configuration
             );
 
-            $versionExecutionResult->setSql($this->sql);
-            $versionExecutionResult->setParams($this->params);
-            $versionExecutionResult->setTypes($this->types);
+            $result->setSql($this->sql, $this->params, $this->types);
         } catch (SkipMigration $e) {
-            $this->skipMigration(
-                $e,
-                $version,
-                $migration,
-                $direction,
-                $migratorConfiguration
-            );
+            $result->setSkipped(true);
 
-            $versionExecutionResult->setSkipped(true);
+            $this->migrationEnd($e, $plan, $result, $configuration);
         } catch (Throwable $e) {
-            $this->migrationError($e, $version, $migration);
+            $result->setError(true, $e);
 
-            $versionExecutionResult->setError(true);
-            $versionExecutionResult->setException($e);
+            $this->migrationEnd($e, $plan, $result, $configuration);
 
             throw $e;
         }
 
-        return $versionExecutionResult;
+        return $result;
     }
 
     private function startMigration(
-        Version $version,
-        AbstractMigration $migration,
-        string $direction,
-        MigratorConfiguration $migratorConfiguration
+        MigrationPlan $plan,
+        MigratorConfiguration $configuration
     ) : void {
         $this->sql    = [];
         $this->params = [];
         $this->types  = [];
 
-        $this->configuration->dispatchVersionEvent(
-            $version,
+        $this->dispatcher->dispatchVersionEvent(
             Events::onMigrationsVersionExecuting,
-            $direction,
-            $migratorConfiguration->isDryRun()
+            $plan,
+            $configuration
         );
 
-        if (! $migration->isTransactional()) {
+        if (! $plan->getMigration()->isTransactional()) {
             return;
         }
 
@@ -183,161 +171,162 @@ final class Executor implements ExecutorInterface
     }
 
     private function executeMigration(
-        Version $version,
-        AbstractMigration $migration,
-        ExecutionResult $versionExecutionResult,
-        string $direction,
-        MigratorConfiguration $migratorConfiguration
+        MigrationPlan $plan,
+        ExecutionResult $result,
+        MigratorConfiguration $configuration
     ) : ExecutionResult {
         $stopwatchEvent = $this->stopwatch->start('execute');
 
-        $version->setState(State::PRE);
+        $migration = $plan->getMigration();
+        $direction = $plan->getDirection();
 
-        $fromSchema = $this->getFromSchema($migratorConfiguration);
+        $result->setState(State::PRE);
+
+        $fromSchema = $this->getFromSchema($configuration);
 
         $migration->{'pre' . ucfirst($direction)}($fromSchema);
 
-        $this->outputWriter->write("\n" . $this->getMigrationHeader($version, $migration, $direction) . "\n");
+        $this->logger->info(...$this->getMigrationHeader($plan, $migration, $direction));
 
-        $version->setState(State::EXEC);
+        $result->setState(State::EXEC);
 
         $toSchema = $this->schemaProvider->createToSchema($fromSchema);
 
-        $versionExecutionResult->setToSchema($toSchema);
+        $result->setToSchema($toSchema);
 
         $migration->$direction($toSchema);
+
+        foreach ($migration->getSql() as $sqlData) {
+            $this->addSql(...$sqlData);
+        }
 
         foreach ($this->schemaProvider->getSqlDiffToMigrate($fromSchema, $toSchema) as $sql) {
             $this->addSql($sql);
         }
 
         if (count($this->sql) !== 0) {
-            if (! $migratorConfiguration->isDryRun()) {
-                $this->executeVersionExecutionResult($version, $migratorConfiguration);
+            if (! $configuration->isDryRun()) {
+                $this->executeResult($configuration);
             } else {
                 foreach ($this->sql as $idx => $query) {
                     $this->outputSqlQuery($idx, $query);
                 }
             }
         } else {
-            $this->outputWriter->write(sprintf(
-                '<error>Migration %s was executed but did not result in any SQL statements.</error>',
-                $version->getVersion()
-            ));
+            $this->logger->warning('Migration {version} was executed but did not result in any SQL statements.', [
+                'version' => (string) $plan->getVersion(),
+            ]);
         }
 
-        $version->setState(State::POST);
+        $result->setState(State::POST);
 
         $migration->{'post' . ucfirst($direction)}($toSchema);
-
-        if (! $migratorConfiguration->isDryRun()) {
-            $version->markVersion($direction);
-        }
-
         $stopwatchEvent->stop();
 
-        $versionExecutionResult->setTime($stopwatchEvent->getDuration());
-        $versionExecutionResult->setMemory($stopwatchEvent->getMemory());
+        $result->setTime($stopwatchEvent->getDuration());
+        $result->setMemory($stopwatchEvent->getMemory());
+        $plan->markAsExecuted($result);
 
-        if ($direction === Direction::UP) {
-            $this->outputWriter->write(sprintf(
-                "\n  <info>++</info> migrated (took %sms, used %s memory)",
-                $stopwatchEvent->getDuration(),
-                BytesFormatter::formatBytes($stopwatchEvent->getMemory())
-            ));
-        } else {
-            $this->outputWriter->write(sprintf(
-                "\n  <info>--</info> reverted (took %sms, used %s memory)",
-                $stopwatchEvent->getDuration(),
-                BytesFormatter::formatBytes($stopwatchEvent->getMemory())
-            ));
+        if (! $configuration->isDryRun()) {
+            $this->metadataStorage->complete($result);
         }
+
+        $params = [
+            'version' => (string) $plan->getVersion(),
+            'time' => $stopwatchEvent->getDuration(),
+            'memory' => BytesFormatter::formatBytes($stopwatchEvent->getMemory()),
+            'direction' => $direction === Direction::UP ? 'migrated' : 'reverted',
+        ];
+
+        $this->logger->info('Migration {version} {direction} (took {time}ms, used {memory} memory)', $params);
 
         if ($migration->isTransactional()) {
             //commit only if running in transactional mode
             $this->connection->commit();
         }
 
-        $version->setState(State::NONE);
+        $result->setState(State::NONE);
 
-        $this->configuration->dispatchVersionEvent(
-            $version,
+        $this->dispatcher->dispatchVersionEvent(
             Events::onMigrationsVersionExecuted,
-            $direction,
-            $migratorConfiguration->isDryRun()
+            $plan,
+            $configuration
         );
 
-        return $versionExecutionResult;
+        return $result;
     }
 
-    private function getMigrationHeader(Version $version, AbstractMigration $migration, string $direction) : string
+    /**
+     * @return mixed[]
+     */
+    private function getMigrationHeader(MigrationPlan $planItem, AbstractMigration $migration, string $direction) : array
     {
-        $versionInfo = $version->getVersion();
+        $versionInfo = (string) $planItem->getVersion();
         $description = $migration->getDescription();
 
         if ($description !== '') {
             $versionInfo .= ' (' . $description . ')';
         }
 
+        $params = ['version_name' => $versionInfo];
+
         if ($direction === Direction::UP) {
-            return sprintf('  <info>++</info> migrating <comment>%s</comment>', $versionInfo);
+            return ['++ migrating {version_name}', $params];
         }
 
-        return sprintf('  <info>--</info> reverting <comment>%s</comment>', $versionInfo);
+        return ['++ reverting {version_name}', $params];
     }
 
-    private function skipMigration(
-        SkipMigration $e,
-        Version $version,
-        AbstractMigration $migration,
-        string $direction,
-        MigratorConfiguration $migratorConfiguration
-    ) : void {
-        if ($migration->isTransactional()) {
-            //only rollback transaction if in transactional mode
-            $this->connection->rollBack();
-        }
-
-        if (! $migratorConfiguration->isDryRun()) {
-            $version->markVersion($direction);
-        }
-
-        $this->outputWriter->write(sprintf("\n  <info>SS</info> skipped (Reason: %s)", $e->getMessage()));
-
-        $version->setState(State::NONE);
-
-        $this->configuration->dispatchVersionEvent(
-            $version,
-            Events::onMigrationsVersionSkipped,
-            $direction,
-            $migratorConfiguration->isDryRun()
-        );
-    }
-
-    /**
-     * @throws Throwable
-     */
-    private function migrationError(Throwable $e, Version $version, AbstractMigration $migration) : void
+    private function migrationEnd(Throwable $e, MigrationPlan $plan, ExecutionResult $result, MigratorConfiguration $configuration) : void
     {
-        $this->outputWriter->write(sprintf(
-            '<error>Migration %s failed during %s. Error %s</error>',
-            $version->getVersion(),
-            $version->getExecutionState(),
-            $e->getMessage()
-        ));
+        $plan->markAsExecuted($result);
+        $this->logResult($e, $result, $plan);
+
+        $this->dispatcher->dispatchVersionEvent(
+            Events::onMigrationsVersionSkipped,
+            $plan,
+            $configuration
+        );
+
+        $migration = $plan->getMigration();
 
         if ($migration->isTransactional()) {
             //only rollback transaction if in transactional mode
             $this->connection->rollBack();
         }
 
-        $version->setState(State::NONE);
+        if ($configuration->isDryRun() || $result->isSkipped() || $result->hasError()) {
+            return;
+        }
+
+        $this->metadataStorage->complete($result);
     }
 
-    private function executeVersionExecutionResult(
-        Version $version,
-        MigratorConfiguration $migratorConfiguration
-    ) : void {
+    private function logResult(Throwable $e, ExecutionResult $result, MigrationPlan $plan) : void
+    {
+        if ($result->isSkipped()) {
+            $this->logger->error(
+                'Migration {version} skipped during {state}. Reason: "{reason}"',
+                [
+                    'version' => (string) $plan->getVersion(),
+                    'reason' => $e->getMessage(),
+                    'state' => $this->getExecutionStateAsString($result->getState()),
+                ]
+            );
+        } elseif ($result->hasError()) {
+            $this->logger->error(
+                'Migration {version} failed during {state}. Error: "{error}"',
+                [
+                    'version' => (string) $plan->getVersion(),
+                    'error' => $e->getMessage(),
+                    'state' => $this->getExecutionStateAsString($result->getState()),
+                ]
+            );
+        }
+    }
+
+    private function executeResult(MigratorConfiguration $configuration) : void
+    {
         foreach ($this->sql as $key => $query) {
             $stopwatchEvent = $this->stopwatch->start('query');
 
@@ -351,11 +340,13 @@ final class Executor implements ExecutorInterface
 
             $stopwatchEvent->stop();
 
-            if (! $migratorConfiguration->getTimeAllQueries()) {
+            if (! $configuration->getTimeAllQueries()) {
                 continue;
             }
 
-            $this->outputWriter->write(sprintf('  <info>%sms</info>', $stopwatchEvent->getDuration()));
+            $this->logger->debug('{duration}ms', [
+                'duration' => $stopwatchEvent->getDuration(),
+            ]);
         }
     }
 
@@ -377,20 +368,33 @@ final class Executor implements ExecutorInterface
             $this->types[$idx] ?? []
         );
 
-        $this->outputWriter->write(rtrim(sprintf(
-            '     <comment>-></comment> %s %s',
-            $query,
-            $params
-        )));
+        $this->logger->debug('{query} {params}', [
+            'query' => $query,
+            'params' => $params,
+        ]);
     }
 
-    private function getFromSchema(MigratorConfiguration $migratorConfiguration) : Schema
+    private function getFromSchema(MigratorConfiguration $configuration) : Schema
     {
         // if we're in a dry run, use the from Schema instead of reading the schema from the database
-        if ($migratorConfiguration->isDryRun() && $migratorConfiguration->getFromSchema() !== null) {
-            return $migratorConfiguration->getFromSchema();
+        if ($configuration->isDryRun() && $configuration->getFromSchema() !== null) {
+            return $configuration->getFromSchema();
         }
 
         return $this->schemaProvider->createFromSchema();
+    }
+
+    private function getExecutionStateAsString(int $state) : string
+    {
+        switch ($state) {
+            case State::PRE:
+                return 'Pre-Checks';
+            case State::POST:
+                return 'Post-Checks';
+            case State::EXEC:
+                return 'Execution';
+            default:
+                return 'No State';
+        }
     }
 }

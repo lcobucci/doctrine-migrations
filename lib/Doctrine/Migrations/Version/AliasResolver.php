@@ -4,7 +4,13 @@ declare(strict_types=1);
 
 namespace Doctrine\Migrations\Version;
 
+use Doctrine\Migrations\Exception\NoMigrationsFoundWithCriteria;
+use Doctrine\Migrations\Exception\NoMigrationsToExecute;
+use Doctrine\Migrations\Exception\UnknownMigrationVersion;
+use Doctrine\Migrations\Metadata\Storage\MetadataStorage;
+use Doctrine\Migrations\MigrationPlanCalculator;
 use Doctrine\Migrations\MigrationRepository;
+use function count;
 use function substr;
 
 /**
@@ -12,7 +18,7 @@ use function substr;
  *
  * @internal
  */
-final class AliasResolver
+final class AliasResolver implements AliasResolverInterface
 {
     private const ALIAS_FIRST   = 'first';
     private const ALIAS_CURRENT = 'current';
@@ -23,9 +29,17 @@ final class AliasResolver
     /** @var MigrationRepository */
     private $migrationRepository;
 
-    public function __construct(MigrationRepository $migrationRepository)
+    /** @var MetadataStorage */
+    private $metadataStorage;
+
+    /** @var MigrationPlanCalculator */
+    private $migrationPlanCalculator;
+
+    public function __construct(MigrationRepository $migrationRepository, MetadataStorage $metadataStorage, MigrationPlanCalculator $migrationPlanCalculator)
     {
-        $this->migrationRepository = $migrationRepository;
+        $this->migrationRepository     = $migrationRepository;
+        $this->metadataStorage         = $metadataStorage;
+        $this->migrationPlanCalculator = $migrationPlanCalculator;
     }
 
     /**
@@ -41,29 +55,66 @@ final class AliasResolver
      *
      * If an existing version number is specified, it is returned verbatimly.
      */
-    public function resolveVersionAlias(string $alias) : ?string
+    public function resolveVersionAlias(string $alias) : Version
     {
-        if ($this->migrationRepository->hasVersion($alias)) {
-            return $alias;
-        }
+        $availableMigrations = $this->migrationRepository->getMigrations();
+        $executedMigrations  = $this->metadataStorage->getExecutedMigrations();
 
         switch ($alias) {
             case self::ALIAS_FIRST:
-                return '0';
-            case self::ALIAS_CURRENT:
-                return $this->migrationRepository->getCurrentVersion();
-            case self::ALIAS_PREV:
-                return $this->migrationRepository->getPrevVersion();
-            case self::ALIAS_NEXT:
-                return $this->migrationRepository->getNextVersion();
-            case self::ALIAS_LATEST:
-                return $this->migrationRepository->getLatestVersion();
-            default:
-                if (substr($alias, 0, 7) === self::ALIAS_CURRENT) {
-                    return $this->migrationRepository->getDeltaVersion(substr($alias, 7));
+                if (count($availableMigrations) === 0) {
+                    throw NoMigrationsToExecute::new();
                 }
 
-                return null;
+                return $availableMigrations->getFirst()->getVersion();
+            case self::ALIAS_CURRENT:
+                try {
+                    return $executedMigrations->getLast()->getVersion();
+                } catch (NoMigrationsFoundWithCriteria $e) {
+                    return new Version('0');
+                }
+                break;
+            case self::ALIAS_PREV:
+                try {
+                    return $executedMigrations->getLast(-1)->getVersion();
+                } catch (NoMigrationsFoundWithCriteria $e) {
+                    return new Version('0');
+                }
+                break;
+            case self::ALIAS_NEXT:
+                $newMigrations = $this->migrationPlanCalculator->getNewMigrations();
+
+                try {
+                    return $newMigrations->getFirst()->getVersion();
+                } catch (NoMigrationsFoundWithCriteria $e) {
+                    throw NoMigrationsToExecute::new($e);
+                }
+                break;
+            case self::ALIAS_LATEST:
+                try {
+                    return $availableMigrations->getLast()->getVersion();
+                } catch (NoMigrationsFoundWithCriteria $e) {
+                    throw NoMigrationsToExecute::new($e);
+                }
+                break;
+            default:
+                if ($availableMigrations->hasMigration(new Version($alias))) {
+                    return $availableMigrations->getMigration(new Version($alias))->getVersion();
+                }
+
+                if (substr($alias, 0, 7) === self::ALIAS_CURRENT) {
+                    $val             = (int) substr($alias, 7);
+                    $targetMigration = null;
+                    if ($val > 0) {
+                        $newMigrations = $this->migrationPlanCalculator->getNewMigrations();
+
+                        return $newMigrations->getFirst($val - 1)->getVersion();
+                    }
+
+                    return $executedMigrations->getLast($val)->getVersion();
+                }
         }
+
+        throw UnknownMigrationVersion::new($alias);
     }
 }

@@ -39,12 +39,11 @@ EOT
         InputInterface $input,
         OutputInterface $output
     ) : ?int {
-        $version = $this->dependencyFactory
-            ->getRollup()->rollup();
+        $version = $this->getDependencyFactory()->getRollup()->rollup();
 
         $output->writeln(sprintf(
             'Rolled up migrations to version <info>%s</info>',
-            $version->getVersion()
+            (string) $version
         ));
 
         return 0;
